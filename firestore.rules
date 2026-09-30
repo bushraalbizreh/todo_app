@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Security rules for the Tasks app (project to-do-app-55081).
+//
+// Data model (matches the app code):
+//   users/{userId}/lists/{listId}      - todo lists      (todo_remote_data_source.dart)
+//   users/{userId}/tasks/{taskId}      - todo tasks      (todo_remote_data_source.dart)
+//   users/{userId}/focus/current       - focus session   (focus_remote_data_source.dart)
+//
+// Authentication model (auth_cubit.dart / auth_remote_data_source.dart):
+//   * On startup the app SILENTLY signs the user in with Firebase Anonymous
+//     Authentication (no login UI ever appears). Firebase supplies a real UID
+//     and every remote call targets users/{uid}/.... If that sign-in fails
+//     (offline start, provider disabled), the session runs as userId 'guest'
+//     and is LOCAL-ONLY: TodoRepository and FocusRepository gate every remote
+//     call on `hasRemoteDataSource`, which is false for 'guest', so the guest
+//     path is never written to or read from by the app.
+//   * An anonymous user IS an authenticated Firebase user (request.auth !=
+//     null) with a unique uid, so sessions are isolated per uid.
+//
+// Therefore the shared users/guest bucket must be unreachable for EVERYONE:
+// it would otherwise be a single public database merging all anonymous
+// users' data (and it is world-writable to unauthenticated clients under
+// the default rules).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny: any path not explicitly matched below is inaccessible.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId
+                         && userId != 'guest';
+    }
+  }
+}
